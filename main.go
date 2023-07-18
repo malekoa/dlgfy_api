@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -71,19 +73,28 @@ func isValidURL(str string) bool {
 	return resp.StatusCode >= 200
 }
 
-func assertProtocol(redirectUrl string) string {
-	u, _ := url.Parse(redirectUrl)
-	log.Default().Println(u.Scheme)
+func assertProtocol(redirectUrl string) (string, error) {
+	u, err := url.Parse(redirectUrl)
+	if err != nil {
+		return "", err
+	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		u.Scheme = "https"
 	}
-	return u.String()
+	log.Default().Println("DONE ASSERTING PROTOCOL")
+	return u.String(), nil
 }
 
 func main() {
-
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found.")
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8000"
+	} else {
+		port = string(":") + port
 	}
 
 	uri := os.Getenv("MONGODB_URI")
@@ -104,6 +115,15 @@ func main() {
 
 	app := fiber.New()
 
+	app.Use(cors.New())
+
+	// TODO: Verify if 20 queries per minute per IP is sustainable.
+	app.Use(limiter.New(limiter.Config{
+		Max:               20,
+		Expiration:        1 * time.Minute,
+		LimiterMiddleware: limiter.SlidingWindow{},
+	}))
+
 	app.Post("/createSlugURLPair", func(c *fiber.Ctx) error {
 		// get url from body
 		url := new(URL)
@@ -115,7 +135,11 @@ func main() {
 			})
 		}
 		// ensure url leads with a protocol and that the url leads to a valid location
-		url.Value = assertProtocol(url.Value)
+		url.Value, err = assertProtocol(url.Value)
+		if err != nil {
+			log.Default().Println("Error - Invalid URL:", url.Value)
+			return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"message": "Invalid URL"})
+		}
 		if !isValidURL(url.Value) {
 			log.Default().Println("Error - Invalid URL:", url.Value)
 			return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"message": "Invalid URL"})
@@ -165,5 +189,5 @@ func main() {
 		})
 	})
 
-	log.Fatal(app.Listen(":3000"))
+	log.Fatal(app.Listen(port))
 }
