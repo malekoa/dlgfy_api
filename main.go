@@ -148,8 +148,8 @@ func main() {
 		slugURLPairCollection := client.Database("dlgfy").Collection("slug-url-pairs")
 		// get unique slug
 		uniqueSlug := generateUniqueSlug(slugURLPairCollection)
-		// set expiration date to 5 minutes after creation date
-		expireAt := time.Now().UTC().Add(time.Minute * 5)
+		// set expiration date to 5 days after creation date
+		expireAt := time.Now().UTC().Add(time.Hour * 24 * 5)
 		// set slugURLPair values
 		slugURLPair := SlugURLPair{Slug: uniqueSlug, Url: url.Value, ExpireAt: expireAt}
 		// insert slugURLPair into db
