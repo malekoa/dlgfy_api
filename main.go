@@ -64,23 +64,6 @@ func createTTLIndex(slugURLPairCollection *mongo.Collection) error {
 	return err
 }
 
-func isValidURL(str string) bool {
-	url, err := url.Parse(str)
-	return url.Scheme != "" && err != nil
-}
-
-func assertProtocol(redirectUrl string) (string, error) {
-	u, err := url.Parse(redirectUrl)
-	if err != nil {
-		return "", err
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		u.Scheme = "https"
-	}
-	log.Default().Println("DONE ASSERTING PROTOCOL")
-	return u.String(), nil
-}
-
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found.")
@@ -113,20 +96,21 @@ func main() {
 
 	app.Use(cors.New())
 
-	// TODO: Verify if 20 queries per minute per IP is sustainable.
 	app.Use(limiter.New(limiter.Config{
 		Max:               20,
 		Expiration:        1 * time.Minute,
 		LimiterMiddleware: limiter.SlidingWindow{},
 		KeyGenerator: func(c *fiber.Ctx) string {
-			return strings.Join(c.IPs(), "") // I have no idea if this works and is safe
+			// I have no idea if this is safe, but it works. I'm doing this
+			// because Heroku uses a proxy in front of my server
+			return strings.Join(c.IPs(), "")
 		},
 	}))
 
 	app.Post("/createSlugURLPair", func(c *fiber.Ctx) error {
 		// get url from body
-		url := new(URL)
-		if err := c.BodyParser(url); err != nil {
+		bodyUrl := new(URL)
+		if err := c.BodyParser(bodyUrl); err != nil {
 			log.Default().Println(err)
 			return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{
 				"err":     err.Error(),
@@ -134,14 +118,16 @@ func main() {
 			})
 		}
 		// ensure url leads with a protocol and that the url leads to a valid location
-		url.Value, err = assertProtocol(url.Value)
+		url, err := url.Parse(bodyUrl.Value)
 		if err != nil {
-			log.Default().Println("Error - Invalid URL:", url.Value)
-			return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"message": "Invalid URL"})
+			return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{
+				"err":     err.Error(),
+				"message": "Invalid URL.",
+			})
 		}
-		if !isValidURL(url.Value) {
-			log.Default().Println("Error - Invalid URL:", url.Value)
-			return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"message": "Invalid URL"})
+		// ensure url has a scheme, default to http
+		if url.Scheme == "" {
+			url.Scheme = "http"
 		}
 		// get slugURLPairCollection
 		slugURLPairCollection := client.Database("dlgfy").Collection("slug-url-pairs")
@@ -150,7 +136,7 @@ func main() {
 		// set expiration date to 5 days after creation date
 		expireAt := time.Now().UTC().Add(time.Hour * 24 * 5)
 		// set slugURLPair values
-		slugURLPair := SlugURLPair{Slug: uniqueSlug, Url: url.Value, ExpireAt: expireAt}
+		slugURLPair := SlugURLPair{Slug: uniqueSlug, Url: url.String(), ExpireAt: expireAt}
 		// insert slugURLPair into db
 		result, err := slugURLPairCollection.InsertOne(context.TODO(), slugURLPair)
 		if err != nil {
