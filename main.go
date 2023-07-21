@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -122,6 +123,9 @@ func main() {
 		Max:               5,
 		Expiration:        1 * time.Minute,
 		LimiterMiddleware: limiter.SlidingWindow{},
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return strings.Join(c.IPs(), "") // I have no idea if this works and is safe
+		},
 	}))
 
 	app.Post("/createSlugURLPair", func(c *fiber.Ctx) error {
