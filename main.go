@@ -120,7 +120,7 @@ func main() {
 
 	// TODO: Verify if 20 queries per minute per IP is sustainable.
 	app.Use(limiter.New(limiter.Config{
-		Max:               5,
+		Max:               20,
 		Expiration:        1 * time.Minute,
 		LimiterMiddleware: limiter.SlidingWindow{},
 		KeyGenerator: func(c *fiber.Ctx) string {
