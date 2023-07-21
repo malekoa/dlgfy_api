@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"log"
 	"math/big"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -66,12 +65,8 @@ func createTTLIndex(slugURLPairCollection *mongo.Collection) error {
 }
 
 func isValidURL(str string) bool {
-	resp, err := http.Get(str)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode >= 200
+	url, err := url.Parse(str)
+	return url.Scheme != "" && err != nil
 }
 
 func assertProtocol(redirectUrl string) (string, error) {
